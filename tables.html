@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Row Counts Explorer</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --surface-hover: #334155;
+    --border: #334155;
+    --text: #e2e8f0;
+    --text-muted: #94a3b8;
+    --accent: #38bdf8;
+    --accent-hover: #7dd3fc;
+    --green: #4ade80;
+    --orange: #fb923c;
+    --pill-bg: #0f172a;
+    --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .header h1 .icon { font-size: 1.6rem; }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+
+  /* ── Stats bar ── */
+  .stats {
+    display: flex;
+    gap: 24px;
+    padding: 16px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-wrap: wrap;
+  }
+  .stat {
+    display: flex;
+    flex-direction: column;
+  }
+  .stat-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+  .stat-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── Controls ── */
+  .controls {
+    padding: 16px 32px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .search-box {
+    flex: 1;
+    min-width: 200px;
+    max-width: 400px;
+    padding: 10px 14px 10px 36px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .search-box:focus { border-color: var(--accent); }
+  .search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+    max-width: 400px;
+  }
+  .search-wrap::before {
+    content: '⌕';
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 1rem;
+    pointer-events: none;
+  }
+
+  .btn {
+    padding: 10px 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background 0.2s, border-color 0.2s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--surface-hover); border-color: var(--accent); }
+  .btn-primary {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+
+  /* ── Table list ── */
+  .container { padding: 0 32px 32px; }
+
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .table-card:hover { border-color: var(--accent); }
+
+  .table-header {
+    display: flex;
+    align-items: center;
+    padding: 14px 20px;
+    cursor: pointer;
+    user-select: none;
+    gap: 12px;
+    transition: background 0.15s;
+  }
+  .table-header:hover { background: var(--surface-hover); }
+
+  .chevron {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    transition: transform 0.25s ease;
+    flex-shrink: 0;
+  }
+  .table-card.open .chevron { transform: rotate(90deg); }
+
+  .table-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    flex: 1;
+  }
+  .table-name a {
+    color: var(--text);
+    text-decoration: none;
+  }
+  .table-name a:hover { color: var(--accent); }
+
+  .pill {
+    font-size: 0.7rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: var(--pill-bg);
+    color: var(--text-muted);
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .pill-count { color: var(--accent); }
+  .pill-rows { color: var(--green); }
+
+  /* ── Column list ── */
+  .columns {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+  }
+  .table-card.open .columns { max-height: 5000px; }
+
+  .column-list {
+    list-style: none;
+    border-top: 1px solid var(--border);
+  }
+  .column-item {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px 10px 52px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+    transition: background 0.15s;
+  }
+  .column-item:last-child { border-bottom: none; }
+  .column-item:hover { background: var(--surface-hover); }
+  .column-item a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .column-item a:hover { text-decoration: underline; }
+  .col-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 12px;
+    flex-shrink: 0;
+    opacity: 0.5;
+  }
+
+  /* ── Loading / Error ── */
+  .loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    gap: 16px;
+  }
+  .spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: var(--text-muted); font-size: 0.9rem; }
+
+  .error-box {
+    background: #3b1420;
+    border: 1px solid #7f1d1d;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 32px;
+    color: #fca5a5;
+  }
+  .error-box strong { color: #fecaca; }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+  }
+
+  /* ── Progress ── */
+  .progress-wrap {
+    padding: 0 32px;
+    display: none;
+  }
+  .progress-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.3s;
+  }
+  .progress-text {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 6px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="icon">⊞</span> Row Counts Explorer</h1>
+  <div class="header-actions">
+    <button class="btn" id="refreshBtn" onclick="loadData()">↻ Refresh</button>
+    <button class="btn btn-primary" id="downloadBtn" onclick="downloadJSON()" disabled>↓ Download JSON</button>
+  </div>
+</div>
+
+<div class="stats" id="statsBar" style="display:none;">
+  <div class="stat">
+    <span class="stat-value" id="statTables">0</span>
+    <span class="stat-label">Tables</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="statColumns">0</span>
+    <span class="stat-label">Columns</span>
+  </div>
+  <div class="stat">
+    <span class="stat-value" id="statMaxRows">0</span>
+    <span class="stat-label">Max Row Count</span>
+  </div>
+</div>
+
+<div class="controls" id="controlsBar" style="display:none;">
+  <div class="search-wrap">
+    <input type="text" class="search-box" id="searchInput" placeholder="Search tables or columns…" oninput="filterResults()">
+  </div>
+  <button class="btn" onclick="expandAll()">+ Expand All</button>
+  <button class="btn" onclick="collapseAll()">− Collapse All</button>
+</div>
+
+<div class="progress-wrap" id="progressWrap">
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-text" id="progressText">Loading…</div>
+</div>
+
+<div class="container" id="content">
+  <div class="loading" id="loadingIndicator">
+    <div class="spinner"></div>
+    <div class="loading-text">Fetching row counts from GraphQL…</div>
+  </div>
+</div>
+
+<script>
+const BASE_URL = window.location.origin;
+const GQL_ENDPOINT = BASE_URL + '/graphql/knowledgeGraph/v1';
+const CSRF_ENDPOINT = BASE_URL + '/rest/2.0/auth/sessions/current?include=csrfToken';
+const PAGE_SIZE = 100;
+
+let groupedData = [];
+let csrfToken = null;
+
+async function fetchCsrfToken() {
+  const resp = await fetch(CSRF_ENDPOINT, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { 'Accept': 'application/json' }
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch CSRF token: ${resp.status} ${resp.statusText}`);
+  const json = await resp.json();
+  csrfToken = json.csrfToken;
+  if (!csrfToken) throw new Error('CSRF token not found in session response');
+}
+
+function buildQuery(limit, offset) {
+  return `query Assets {
+    assets(
+        where: { numericAttributes: { any: { type: { name: { eq: "Row Count" } } } } }
+        limit: ${limit}
+        offset: ${offset}
+    ) {
+        id
+        fullName
+        displayName
+        type { name }
+        numericAttributes(
+          where: { type: { name: { eq: "Row Count" } } }
+          limit: 1
+        ) {
+          numericValue
+          type { name }
+        }
+        outgoingRelations(limit: 10) {
+          target {
+            id
+            fullName
+            displayName
+            type { name }
+          }
+          type { role corole }
+        }
+    }
+  }`;
+}
+
+async function fetchPage(limit, offset) {
+  const resp = await fetch(GQL_ENDPOINT, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+    body: JSON.stringify({ query: buildQuery(limit, offset) })
+  });
+  if (!resp.ok) throw new Error(`Request failed: ${resp.status} ${resp.statusText}`);
+  const json = await resp.json();
+  if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+  return json.data.assets || [];
+}
+
+async function loadData() {
+  const content = document.getElementById('content');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressFill = document.getElementById('progressFill');
+  const progressText = document.getElementById('progressText');
+
+  content.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-text">Fetching row counts from GraphQL…</div></div>';
+  document.getElementById('statsBar').style.display = 'none';
+  document.getElementById('controlsBar').style.display = 'none';
+  document.getElementById('downloadBtn').disabled = true;
+  progressWrap.style.display = 'block';
+  progressFill.style.width = '0%';
+
+  try {
+    await fetchCsrfToken();
+    const allResults = [];
+    let offset = 0;
+
+    while (true) {
+      const assets = await fetchPage(PAGE_SIZE, offset);
+      if (assets.length === 0) break;
+
+      for (const asset of assets) {
+        const rowCountAttr = asset.numericAttributes[0];
+        const rowCount = rowCountAttr ? rowCountAttr.numericValue : null;
+
+        const tableRelation = asset.outgoingRelations.find(
+          rel => rel.target.type && rel.target.type.name === 'Table'
+        );
+        const tableName = tableRelation
+          ? (tableRelation.target.displayName || tableRelation.target.fullName)
+          : 'Unknown Table';
+        const tableId = tableRelation ? tableRelation.target.id : null;
+
+        allResults.push({
+          tableName,
+          tableId,
+          columnName: asset.displayName || asset.fullName,
+          columnId: asset.id,
+          rowCount
+        });
+      }
+
+      offset += assets.length;
+      progressText.textContent = `Fetched ${offset} columns…`;
+      // Indeterminate-ish progress: cap visual at 90% until done
+      progressFill.style.width = Math.min(90, offset / 2) + '%';
+
+      if (assets.length < PAGE_SIZE) break;
+    }
+
+    progressFill.style.width = '100%';
+    progressText.textContent = `Done — ${offset} columns loaded.`;
+    setTimeout(() => { progressWrap.style.display = 'none'; }, 1200);
+
+    // Group by table
+    const tableMap = {};
+    for (const r of allResults) {
+      if (!tableMap[r.tableName]) {
+        tableMap[r.tableName] = { tableName: r.tableName, tableId: r.tableId, rowCount: r.rowCount, columns: [] };
+      }
+      tableMap[r.tableName].columns.push({ name: r.columnName, id: r.columnId });
+    }
+    groupedData = Object.values(tableMap).sort((a, b) => a.tableName.localeCompare(b.tableName));
+
+    renderResults(groupedData);
+
+  } catch (err) {
+    progressWrap.style.display = 'none';
+    content.innerHTML = `<div class="error-box"><strong>Error:</strong> ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderResults(tables) {
+  const content = document.getElementById('content');
+
+  if (tables.length === 0) {
+    content.innerHTML = '<div class="empty">No results found.</div>';
+    document.getElementById('statsBar').style.display = 'none';
+    return;
+  }
+
+  // Stats
+  const totalColumns = tables.reduce((s, t) => s + t.columns.length, 0);
+  const maxRows = Math.max(...tables.map(t => t.rowCount || 0));
+  document.getElementById('statTables').textContent = tables.length.toLocaleString();
+  document.getElementById('statColumns').textContent = totalColumns.toLocaleString();
+  document.getElementById('statMaxRows').textContent = maxRows.toLocaleString();
+  document.getElementById('statsBar').style.display = 'flex';
+  document.getElementById('controlsBar').style.display = 'flex';
+  document.getElementById('downloadBtn').disabled = false;
+
+  let html = '';
+  for (const table of tables) {
+    const tableLink = table.tableId
+      ? `<a href="${BASE_URL}/asset/${encodeURIComponent(table.tableId)}" target="_blank">${escapeHtml(table.tableName)}</a>`
+      : escapeHtml(table.tableName);
+
+    const rowCountDisplay = table.rowCount != null ? Number(table.rowCount).toLocaleString() : '—';
+
+    let colsHtml = '';
+    for (const col of table.columns) {
+      const colLink = col.id
+        ? `<a href="${BASE_URL}/asset/${encodeURIComponent(col.id)}" target="_blank">${escapeHtml(col.name)}</a>`
+        : escapeHtml(col.name);
+      colsHtml += `<li class="column-item"><span class="col-dot"></span>${colLink}</li>`;
+    }
+
+    html += `
+      <div class="table-card" data-table="${escapeAttr(table.tableName)}" data-columns="${escapeAttr(table.columns.map(c => c.name).join('|'))}">
+        <div class="table-header" onclick="toggleCard(this)">
+          <span class="chevron">▶</span>
+          <span class="table-name">${tableLink}</span>
+          <span class="pill pill-rows">${rowCountDisplay} rows</span>
+          <span class="pill pill-count">${table.columns.length} col${table.columns.length !== 1 ? 's' : ''}</span>
+        </div>
+        <div class="columns">
+          <ul class="column-list">${colsHtml}</ul>
+        </div>
+      </div>`;
+  }
+
+  content.innerHTML = html;
+}
+
+function toggleCard(header) {
+  header.parentElement.classList.toggle('open');
+}
+
+function expandAll() {
+  document.querySelectorAll('.table-card').forEach(c => c.classList.add('open'));
+}
+
+function collapseAll() {
+  document.querySelectorAll('.table-card').forEach(c => c.classList.remove('open'));
+}
+
+function filterResults() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  document.querySelectorAll('.table-card').forEach(card => {
+    const table = card.dataset.table.toLowerCase();
+    const cols = card.dataset.columns.toLowerCase();
+    const match = !q || table.includes(q) || cols.includes(q);
+    card.style.display = match ? '' : 'none';
+  });
+}
+
+function downloadJSON() {
+  if (!groupedData.length) return;
+  // Strip IDs from download — keep clean output
+  const clean = groupedData.map(t => ({
+    tableName: t.tableName,
+    rowCount: t.rowCount,
+    columns: t.columns.map(c => c.name)
+  }));
+  const blob = new Blob([JSON.stringify(clean, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'row_counts.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function escapeAttr(s) {
+  return s.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Auto-load on page open
+loadData();
+</script>
+</body>
+</html>
