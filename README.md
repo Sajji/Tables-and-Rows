@@ -1,19 +1,22 @@
 # Row Counts Explorer (tables.html)
 
-A single-file Collibra widget that discovers columns with a Row Count numeric attribute, groups them by table, and presents an interactive explorer with search, expand/collapse, stats, and JSON export.
+A single-file Collibra widget that discovers columns with a Row Count numeric attribute, groups them by table, and presents an interactive explorer with search (by name and description), expand/collapse, stats, and JSON/CSV export.
 
 ## What It Does
 
 - Calls Collibra session API to fetch a CSRF token
 - Queries Knowledge Graph GraphQL for assets that contain the Row Count attribute
 - Maps each column asset to its related table via outgoing relations
+- Pulls Description string attributes for both columns and their parent tables
 - Groups columns under their parent table
-- Shows per-table row count and number of columns
+- Shows per-table row count, number of columns, and table description
+- Renders direct links to each table and column asset in Collibra
 - Provides:
-  - Search across table names and column names
+  - Search across table and column names
+  - Separate search across table and column descriptions
   - Expand all / collapse all
   - Refresh
-  - Download result as JSON
+  - Download result as JSON or CSV
 
 ## File
 
@@ -25,10 +28,10 @@ A single-file Collibra widget that discovers columns with a Row Count numeric at
 2. GET session data to retrieve CSRF token.
 3. POST paginated GraphQL requests (page size 100) until no more assets are returned.
 4. Convert raw assets into:
-   - Table name/id
-   - Column name/id
+   - Table name / id / description
+   - Column name / id / description
    - Row count value
-5. Group by table and render expandable cards.
+5. Group by table and render expandable cards with deep links to each asset.
 
 ## Endpoints Used
 
@@ -41,35 +44,51 @@ A single-file Collibra widget that discovers columns with a Row Count numeric at
 
 The query requests assets where numeric attributes include type name `Row Count`, then reads:
 - Asset metadata (`id`, `displayName`, `fullName`)
-- Numeric attribute value (`numericValue`)
-- Outgoing relation targets to identify the related Table asset
+- Numeric attribute value (`numericValue`) for `Row Count`
+- String attribute (`stringValue`) for `Description` on the column
+- Outgoing relations, including target id/name/type and the target's `Description` string attribute, used to identify the related Table asset
 
 ## UI Features
 
-- Header actions: Refresh, Download JSON
+- Header actions: Refresh, Download JSON, Download CSV
 - Stats bar: tables count, columns count, max row count
-- Search filter: table + column text match
+- Two search inputs:
+  - Name search: filters on table and column names
+  - Description search: filters on table and column descriptions
 - Expand/collapse per card and globally
+- Asset links: table names and column names link out to `/asset/{id}` in Collibra (open in a new tab)
+- Description display: table descriptions render under the table name; column descriptions render under each column
 - Progress bar while paging GraphQL results
 - Error box for auth/query/network issues
 
-## JSON Export Shape
+## Export Shapes
 
-Downloaded filename: `row_counts.json`
+### JSON (`row_counts.json`)
 
 ```json
 [
   {
     "tableName": "Customer",
+    "tableDescription": "Master customer table",
     "rowCount": 120034,
-    "columns": ["Customer ID", "Name", "Region"]
+    "columns": [
+      { "name": "Customer ID", "description": "Primary key" },
+      { "name": "Name", "description": null },
+      { "name": "Region", "description": "ISO region code" }
+    ]
   }
 ]
 ```
 
+### CSV (`row_counts.csv`)
+
+Columns: `Table Name, Row Count, Table Description, Column Name, Column Description`
+
+One row per column. Values are quoted and embedded quotes are escaped.
+
 Notes:
-- Export intentionally strips internal asset IDs.
-- Row count can be null/empty when the attribute is missing.
+- Exports intentionally strip internal asset IDs.
+- Row count and descriptions can be null/empty when missing.
 
 ## Usage in Collibra
 
@@ -89,7 +108,7 @@ Notes:
 To return results, the active user must be able to:
 - Access session endpoint
 - Execute the Knowledge Graph query
-- Read relevant assets and relations
+- Read relevant assets, relations, and Description attributes
 
 ## Known Limitations
 
@@ -97,6 +116,7 @@ To return results, the active user must be able to:
 - If relation modeling differs, rows may appear under `Unknown Table`.
 - Progress bar is approximate during pagination and finalizes at completion.
 - Large datasets can take time because all pages are fetched client-side.
+- Description search only matches values present on the column or its parent table.
 
 ## Troubleshooting
 
@@ -106,6 +126,8 @@ To return results, the active user must be able to:
   - Check network access, auth, and proxy/CORS behavior in your environment
 - Empty results
   - Confirm assets actually have numeric attribute type named exactly `Row Count`
+- Missing descriptions
+  - Confirm the string attribute type is named exactly `Description`
 
 ## License
 

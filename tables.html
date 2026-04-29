@@ -170,6 +170,8 @@
     font-weight: 600;
     font-size: 0.95rem;
     flex: 1;
+    display: flex;
+    flex-direction: column;
   }
   .table-name a {
     color: var(--text);
@@ -203,11 +205,17 @@
   }
   .column-item {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     padding: 10px 20px 10px 52px;
     border-bottom: 1px solid var(--border);
     font-size: 0.85rem;
     transition: background 0.15s;
+  }
+  .col-main {
+    display: flex;
+    align-items: center;
+    width: 100%;
   }
   .column-item:last-child { border-bottom: none; }
   .column-item:hover { background: var(--surface-hover); }
@@ -286,6 +294,25 @@
     margin-top: 6px;
     text-align: right;
   }
+
+  /* ── Description ── */
+  .table-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-top: 2px;
+    line-height: 1.4;
+  }
+  .col-desc {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 3px;
+    margin-left: 18px;
+    line-height: 1.4;
+  }
+
+  /* ── Export ── */
+  .btn-group { display: flex; gap: 4px; }
 </style>
 </head>
 <body>
@@ -294,7 +321,10 @@
   <h1><span class="icon">⊞</span> Row Counts Explorer</h1>
   <div class="header-actions">
     <button class="btn" id="refreshBtn" onclick="loadData()">↻ Refresh</button>
-    <button class="btn btn-primary" id="downloadBtn" onclick="downloadJSON()" disabled>↓ Download JSON</button>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="downloadJsonBtn" onclick="downloadJSON()" disabled>↓ JSON</button>
+      <button class="btn btn-primary" id="downloadCsvBtn" onclick="downloadCSV()" disabled>↓ CSV</button>
+    </div>
   </div>
 </div>
 
@@ -316,6 +346,9 @@
 <div class="controls" id="controlsBar" style="display:none;">
   <div class="search-wrap">
     <input type="text" class="search-box" id="searchInput" placeholder="Search tables or columns…" oninput="filterResults()">
+  </div>
+  <div class="search-wrap">
+    <input type="text" class="search-box" id="descSearchInput" placeholder="Search descriptions…" oninput="filterResults()">
   </div>
   <button class="btn" onclick="expandAll()">+ Expand All</button>
   <button class="btn" onclick="collapseAll()">− Collapse All</button>
@@ -372,12 +405,24 @@ function buildQuery(limit, offset) {
           numericValue
           type { name }
         }
+        stringAttributes(
+          where: { type: { name: { eq: "Description" } } }
+          limit: 1
+        ) {
+          stringValue
+        }
         outgoingRelations(limit: 10) {
           target {
             id
             fullName
             displayName
             type { name }
+            stringAttributes(
+              where: { type: { name: { eq: "Description" } } }
+              limit: 1
+            ) {
+              stringValue
+            }
           }
           type { role corole }
         }
@@ -407,7 +452,8 @@ async function loadData() {
   content.innerHTML = '<div class="loading"><div class="spinner"></div><div class="loading-text">Fetching row counts from GraphQL…</div></div>';
   document.getElementById('statsBar').style.display = 'none';
   document.getElementById('controlsBar').style.display = 'none';
-  document.getElementById('downloadBtn').disabled = true;
+  document.getElementById('downloadJsonBtn').disabled = true;
+  document.getElementById('downloadCsvBtn').disabled = true;
   progressWrap.style.display = 'block';
   progressFill.style.width = '0%';
 
@@ -431,12 +477,18 @@ async function loadData() {
           ? (tableRelation.target.displayName || tableRelation.target.fullName)
           : 'Unknown Table';
         const tableId = tableRelation ? tableRelation.target.id : null;
+        const tableDescription = tableRelation && tableRelation.target.stringAttributes && tableRelation.target.stringAttributes[0]
+          ? tableRelation.target.stringAttributes[0].stringValue : null;
+        const columnDescription = asset.stringAttributes && asset.stringAttributes[0]
+          ? asset.stringAttributes[0].stringValue : null;
 
         allResults.push({
           tableName,
           tableId,
+          tableDescription,
           columnName: asset.displayName || asset.fullName,
           columnId: asset.id,
+          columnDescription,
           rowCount
         });
       }
@@ -457,9 +509,9 @@ async function loadData() {
     const tableMap = {};
     for (const r of allResults) {
       if (!tableMap[r.tableName]) {
-        tableMap[r.tableName] = { tableName: r.tableName, tableId: r.tableId, rowCount: r.rowCount, columns: [] };
+        tableMap[r.tableName] = { tableName: r.tableName, tableId: r.tableId, tableDescription: r.tableDescription, rowCount: r.rowCount, columns: [] };
       }
-      tableMap[r.tableName].columns.push({ name: r.columnName, id: r.columnId });
+      tableMap[r.tableName].columns.push({ name: r.columnName, id: r.columnId, description: r.columnDescription });
     }
     groupedData = Object.values(tableMap).sort((a, b) => a.tableName.localeCompare(b.tableName));
 
@@ -488,7 +540,8 @@ function renderResults(tables) {
   document.getElementById('statMaxRows').textContent = maxRows.toLocaleString();
   document.getElementById('statsBar').style.display = 'flex';
   document.getElementById('controlsBar').style.display = 'flex';
-  document.getElementById('downloadBtn').disabled = false;
+  document.getElementById('downloadJsonBtn').disabled = false;
+  document.getElementById('downloadCsvBtn').disabled = false;
 
   let html = '';
   for (const table of tables) {
@@ -503,14 +556,22 @@ function renderResults(tables) {
       const colLink = col.id
         ? `<a href="${BASE_URL}/asset/${encodeURIComponent(col.id)}" target="_blank">${escapeHtml(col.name)}</a>`
         : escapeHtml(col.name);
-      colsHtml += `<li class="column-item"><span class="col-dot"></span>${colLink}</li>`;
+      colsHtml += `<li class="column-item">
+          <div class="col-main"><span class="col-dot"></span>${colLink}</div>
+          ${col.description ? `<div class="col-desc">${escapeHtml(col.description)}</div>` : ''}
+        </li>`;
     }
 
+    const descData = [table.tableDescription, ...table.columns.map(c => c.description)].filter(Boolean).join('|');
+
     html += `
-      <div class="table-card" data-table="${escapeAttr(table.tableName)}" data-columns="${escapeAttr(table.columns.map(c => c.name).join('|'))}">
+      <div class="table-card" data-table="${escapeAttr(table.tableName)}" data-columns="${escapeAttr(table.columns.map(c => c.name).join('|'))}" data-desc="${escapeAttr(descData)}">
         <div class="table-header" onclick="toggleCard(this)">
           <span class="chevron">▶</span>
-          <span class="table-name">${tableLink}</span>
+          <span class="table-name">
+            ${tableLink}
+            ${table.tableDescription ? `<span class="table-desc">${escapeHtml(table.tableDescription)}</span>` : ''}
+          </span>
           <span class="pill pill-rows">${rowCountDisplay} rows</span>
           <span class="pill pill-count">${table.columns.length} col${table.columns.length !== 1 ? 's' : ''}</span>
         </div>
@@ -537,27 +598,54 @@ function collapseAll() {
 
 function filterResults() {
   const q = document.getElementById('searchInput').value.toLowerCase();
+  const dq = document.getElementById('descSearchInput').value.toLowerCase();
   document.querySelectorAll('.table-card').forEach(card => {
     const table = card.dataset.table.toLowerCase();
     const cols = card.dataset.columns.toLowerCase();
-    const match = !q || table.includes(q) || cols.includes(q);
-    card.style.display = match ? '' : 'none';
+    const desc = (card.dataset.desc || '').toLowerCase();
+    const nameMatch = !q || table.includes(q) || cols.includes(q);
+    const descMatch = !dq || desc.includes(dq);
+    card.style.display = (nameMatch && descMatch) ? '' : 'none';
   });
 }
 
 function downloadJSON() {
   if (!groupedData.length) return;
-  // Strip IDs from download — keep clean output
   const clean = groupedData.map(t => ({
     tableName: t.tableName,
+    tableDescription: t.tableDescription || null,
     rowCount: t.rowCount,
-    columns: t.columns.map(c => c.name)
+    columns: t.columns.map(c => ({ name: c.name, description: c.description || null }))
   }));
   const blob = new Blob([JSON.stringify(clean, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'row_counts.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadCSV() {
+  if (!groupedData.length) return;
+  const rows = [['Table Name', 'Row Count', 'Table Description', 'Column Name', 'Column Description']];
+  for (const t of groupedData) {
+    for (const col of t.columns) {
+      rows.push([
+        t.tableName,
+        t.rowCount != null ? t.rowCount : '',
+        t.tableDescription || '',
+        col.name,
+        col.description || ''
+      ]);
+    }
+  }
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'row_counts.csv';
   a.click();
   URL.revokeObjectURL(url);
 }
